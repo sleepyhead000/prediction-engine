@@ -56,6 +56,12 @@ RE_HEADER_SUBJECT = re.compile(
 )
 RE_HEADER_SET = re.compile(r"MCQ Master Set:\s*(\d+)")
 
+# Analysis report detection (student performance reports, not raw exams)
+RE_ANALYSIS_REPORT = re.compile(
+    r"(?:Obtained Marks|Accuracy:|MCQ Obtained|Correct:\s*\d+,\s*Incorrect)",
+    re.IGNORECASE,
+)
+
 
 # ---------------------------------------------------------------------------
 # Metadata extraction from filename
@@ -228,6 +234,10 @@ def ingest_pdf(pdf_path: Path, src_root: Path) -> EnglishDocument | None:
         if not header_text:
             header_text = page_text[:500]
 
+    # Skip analysis reports (student performance reports, not raw exams)
+    if RE_ANALYSIS_REPORT.search(header_text):
+        return None
+
     # Extract metadata from header
     subject = extract_subject_from_text(header_text)
     if not subject:
@@ -289,6 +299,16 @@ def run_ingest(src_dir: Path, out_path: Path) -> EnglishQuestionsFile:
         doc_obj = ingest_pdf(pdf_path, src_dir)
 
         if doc_obj is None:
+            # Check if it's an analysis report (expected skip)
+            try:
+                check_doc = pymupdf.open(str(pdf_path))
+                check_text = check_doc[0].get_text()[:500]
+                if RE_ANALYSIS_REPORT.search(check_text):
+                    report.files_seen -= 1
+                    print("SKIPPED (analysis report)")
+                    continue
+            except Exception:
+                pass
             report.files_failed += 1
             print("FAILED")
             continue
