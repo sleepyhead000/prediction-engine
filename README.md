@@ -1,7 +1,6 @@
-# prediction-engine
+# Prediction-engine
 
-Predicts questions for Udvash/Unmesh weekly exams (Bangladesh, HSC admission
-prep, Physics / Chemistry / Math).
+Predicts questions for Udvash weekly exams
 
 ## Quick Start (new PC)
 
