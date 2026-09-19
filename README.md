@@ -1,0 +1,1 @@
+This is just a personal project of me making a question predictor for Udvash because I would rather do this than study for the weekly exams. Feel free to use  it and  have  fun with it and if you find ways to improve  it just fork it and gimme a star or whatever.
