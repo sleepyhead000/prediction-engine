@@ -346,3 +346,47 @@ class GroundTruthLabel(BaseModel):
     n_options: int = 4
     labelled_by: str = "human"
     labelled_at: str = ""
+
+
+# ---------------------------------------------------------------------------
+# English PDF ingest (01_questions.json)
+# ---------------------------------------------------------------------------
+
+class EnglishOption(BaseModel):
+    letter: str = Field(pattern=r"^[A-D]$")
+    text: str
+
+
+class EnglishQuestion(BaseModel):
+    q_index: int = Field(ge=1)
+    question_text: str
+    options: list[EnglishOption] = Field(min_length=1)
+    math_expressions: list[str] = Field(default_factory=list)
+    correct_letter: Optional[str] = Field(None, pattern=r"^[A-D]$")
+
+
+class EnglishDocument(BaseModel):
+    doc_id: str
+    source_path: str
+    exam_kind: ExamKind
+    subject_hint: str = ""
+    week_index: Optional[int] = None
+    unique_set: Optional[int] = None
+    questions: list[EnglishQuestion]
+
+
+class EnglishIngestReport(BaseModel):
+    files_seen: int = 0
+    files_ok: int = 0
+    files_failed: int = 0
+    total_questions: int = 0
+    questions_with_options: int = 0
+    questions_missing_options: int = 0
+    per_file: dict[str, dict[str, int]] = Field(default_factory=dict)
+
+
+class EnglishQuestionsFile(BaseModel):
+    schema_version: int = 1
+    source_type: str = "english_pdf"
+    documents: list[EnglishDocument] = Field(default_factory=list)
+    ingest_report: EnglishIngestReport = Field(default_factory=EnglishIngestReport)

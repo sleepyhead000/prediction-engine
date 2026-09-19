@@ -11,6 +11,11 @@ from engine.schemas import (
     DecodedQuestion,
     DecodedQuestionsFile,
     DecodeReport,
+    EnglishDocument,
+    EnglishIngestReport,
+    EnglishOption,
+    EnglishQuestion,
+    EnglishQuestionsFile,
     MathBlock,
     RawDocument,
     RawNodesFile,
@@ -99,3 +104,65 @@ class TestRawQuestionInvariants:
     def test_empty_stem_rejected(self):
         with pytest.raises(Exception):
             RawQuestion(q_index=1, stem_nodes=[], options=[])
+
+
+class TestEnglishQuestionsFile:
+    def test_roundtrip(self):
+        doc = EnglishDocument(
+            doc_id="sha1:abc123",
+            source_path="sources/exams/C1 MCQ 1.pdf",
+            exam_kind=ExamKind.DAILY_MCQ,
+            subject_hint="Chemistry",
+            week_index=1,
+            questions=[
+                EnglishQuestion(
+                    q_index=1,
+                    question_text="What is the boiling point of water?",
+                    options=[
+                        EnglishOption(letter="A", text="90°C"),
+                        EnglishOption(letter="B", text="100°C"),
+                        EnglishOption(letter="C", text="110°C"),
+                        EnglishOption(letter="D", text="120°C"),
+                    ],
+                    math_expressions=[],
+                )
+            ],
+        )
+        report = EnglishIngestReport(
+            files_seen=1, files_ok=1, total_questions=1, questions_with_options=1
+        )
+        eqf = EnglishQuestionsFile(documents=[doc], ingest_report=report)
+        serialized = eqf.model_dump_json()
+        restored = EnglishQuestionsFile.model_validate_json(serialized)
+        assert restored.documents[0].doc_id == "sha1:abc123"
+        assert restored.documents[0].questions[0].question_text == "What is the boiling point of water?"
+        assert len(restored.documents[0].questions[0].options) == 4
+
+    def test_mcq_exactly_4_options(self):
+        q = EnglishQuestion(
+            q_index=1,
+            question_text="test",
+            options=[
+                EnglishOption(letter="A", text="a"),
+                EnglishOption(letter="B", text="b"),
+                EnglishOption(letter="C", text="c"),
+                EnglishOption(letter="D", text="d"),
+            ],
+        )
+        assert len(q.options) == 4
+
+    def test_math_expressions_preserved(self):
+        q = EnglishQuestion(
+            q_index=1,
+            question_text="Calculate ΔG",
+            options=[
+                EnglishOption(letter="A", text="-100 kJ"),
+                EnglishOption(letter="B", text="-200 kJ"),
+                EnglishOption(letter="C", text="-300 kJ"),
+                EnglishOption(letter="D", text="-400 kJ"),
+            ],
+            math_expressions=["ΔG = ΔH - TΔS"],
+        )
+        serialized = q.model_dump_json()
+        restored = EnglishQuestion.model_validate_json(serialized)
+        assert restored.math_expressions == ["ΔG = ΔH - TΔS"]

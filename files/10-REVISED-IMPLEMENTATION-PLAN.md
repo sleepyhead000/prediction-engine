@@ -8,14 +8,14 @@ source. This has been revised:
 - **Exam sources:** English-translated PDFs (text-selectable, PyMuPDF-readable)
 - **Textbook sources:** Bengali board book scans (image-based PDFs, need OCR)
 - **Bijoy decoder:** Eliminated entirely
-- **Knowledge base:** NotebookLM-style with entity extraction, knowledge graph,
-  and strict grounding verification
+- **Knowledge base:** NotebookLM-style with entity extraction and strict
+  grounding verification
 
 ## What's Already Built
 
 | Component | Status | File |
 |-----------|--------|------|
-| Pydantic schemas (all stages) | ✅ Complete | `engine/schemas.py` |
+| Pydantic schemas (Bengali stages) | ✅ Complete | `engine/schemas.py` |
 | Cached LLM client | ✅ Complete | `engine/llm.py` |
 | Schema round-trip tests | ✅ 3 test classes | `tests/test_schemas.py` |
 | pyproject.toml + deps | ✅ All installed | `pyproject.toml` |
@@ -24,7 +24,8 @@ source. This has been revised:
 | sentence-transformers 6.1.0 | ✅ Installed | — |
 
 **Not built:** No pipeline stage implementations. No `data/` directory. No
-ChromaDB persistent store.
+ChromaDB persistent store. New English schemas not yet added to `engine/schemas.py`
+alongside existing Bengali schemas.
 
 ## Critical Infrastructure Warning
 
@@ -40,7 +41,7 @@ These are set in `setup_env.ps1` (root of repo). Run it before any Python work.
 
 ---
 
-## Revised Pipeline Architecture
+## Revised Pipeline Architecture (Collapsed to 8 Stages)
 
 ```
 sources/
@@ -48,19 +49,29 @@ sources/
   books/           ← Bengali board book scans
       |
       v
-[1] ingest exams  →  data/01_questions.json       English question text
-[2] OCR books     →  data/book_pages.jsonl         Bengali scans → text
-[3] chunk+anchor  →  data/book_chunks.json         Structured chunks with locations
-[4] entities      →  data/book_entities.json       Entities + bridge detection
-[5] concepts      →  data/book_concepts.json       Concepts + source grounding
-[6] graph         →  data/book_graph.json           Entity co-occurrence graph
-[7] index         →  ChromaDB (persistent)          Embed concepts + chunks
-[8] classify      →  data/03_labelled.json          Question → concept
-[9] features      →  data/04_features.json          Signal matrix
-[10] score        →  data/05_ranked.json            Ranked predictions
-[11] generate     →  out/prediction_wN.json         Verified predictions
-[12] eval         →  out/scorecard_wN.json          Metrics
+[1] ingest exams     →  data/01_questions.json       English question text
+[2] OCR books        →  data/book_pages.jsonl         Bengali scans → text
+[3] chunk+anchor     →  data/book_chunks.json         Structured chunks with locations
+[4] enrich chunks    →  data/book_enriched.json       Entities + concepts + metadata (single LLM call)
+[5] index            →  ChromaDB (persistent)          Embed enriched chunks
+[6] classify         →  data/03_labelled.json          Question → concept
+[7] score            →  data/05_ranked.json            Features + ranked predictions
+[8] generate+eval    →  out/prediction_wN.json         Verified predictions + scorecard
 ```
+
+**Rationale for collapse:** With only 4 weekly exams to train on, a 12-stage
+pipeline introduces too many failure modes. Entity graph (bridge detection,
+co-occurrence) can be added later once 10+ weekly exams exist to validate it.
+ChromaDB uses a single collection instead of two — cross-referencing adds
+complexity that isn't justified at this scale.
+
+---
+
+## Blocking Dependency
+
+**Before Gate 2:** Create a labelled sample set (minimum 20 questions from
+English exam PDFs) to verify retrieval ceiling. The previous 120-question
+labelled set (T-004) was never created. Use English questions for easier labelling.
 
 ---
 
@@ -76,7 +87,7 @@ sources/
 
 ---
 
-## Phase 1 — Exam PDF Ingest (T-100 to T-104)
+## Phase 1 — Exam PDF Ingest (T-100 to T-103)
 
 ### T-100: English PDF text extractor
 
@@ -90,7 +101,7 @@ sources/
 5. Extract math: detect LaTeX-like patterns (`\frac`, `^`, `_`, `\sqrt`)
 6. Output: `data/01_questions.json`
 
-**Output schema:** New `01_questions_en.json`:
+**Output schema:** New `EnglishQuestionFile` in `engine/schemas.py`:
 
 ```json
 {
@@ -127,7 +138,8 @@ options. Every daily MCQ yields 20 questions. `ingest_report.files_failed == 0`.
 ### T-101: Schema update for English questions
 
 Add `EnglishQuestionFile`, `EnglishQuestion`, `EnglishOption` to
-`engine/schemas.py`. Keep backward compatibility with existing Bengali schemas.
+`engine/schemas.py`. Keep backward compatibility with existing Bengali schemas
+(old models stay as reference).
 
 **Verify:** Round-trip test for new models.
 
@@ -176,8 +188,10 @@ def ocr_page(page_image):
 
 ```python
 import os
-os.environ['EASYOCR_MODEL_PATH'] = 'G:\\prediction-engine\\cache\\easyocr'
+os.environ['EASYOCR_MODEL_PATH'] = os.environ.get('EASYOCR_MODEL_PATH', 'cache/easyocr')
 ```
+
+Read from environment, don't hardcode drive letters.
 
 **Verify:** OCR one sample page. Bengali text is readable. Confidence > 0.7.
 
@@ -200,8 +214,9 @@ for page_num in range(len(doc)):
 
 **Logic:**
 1. For each book PDF in `sources/books/`
-2. For each page: extract image → OCR → store text
-3. Output: `data/book_pages.jsonl` (one line per page)
+2. For each page: check `data/ocr_overrides/{book}/page_{num}.txt` first
+3. If no override: extract image → OCR → store text
+4. Output: `data/book_pages.jsonl` (one line per page)
 
 ```json
 {
@@ -235,6 +250,9 @@ exceeds 20k chars.
 ### T-204: Chunk splitter
 
 `engine/chunker.py` — splits book pages into retrievable chunks.
+
+**Token counting:** Use the embedding model's auto-loaded tokenizer
+(`sentence-transformers` handles this). Document which tokenizer is used.
 
 **Strategy:**
 1. **Structured books** (headings detected): Split on section boundaries.
@@ -300,22 +318,24 @@ For each chunk, extract:
 **Verify:** All tests pass.
 
 **GATE 2:** All board books OCR'd. Chunks created with anchor metadata. Quality
-report clean. `retrieval_ceiling >= 0.90` on labelled sample.
+report clean. `retrieval_ceiling >= 0.90` on labelled sample (20 questions
+minimum).
 
 ---
 
-## Phase 3 — Entity Extraction + Knowledge Graph (T-300 to T-305)
+## Phase 3 — Chunk Enrichment + Indexing (T-300 to T-304)
 
-### T-300: Entity extractor
+Single combined phase: extract entities + concepts per chunk in one LLM call,
+then index into ChromaDB.
 
-`engine/entities.py` — extracts key entities from each chunk.
+### T-300: Chunk enricher (entities + concepts combined)
 
-**LLM call per chunk (batched 5 per call):**
+`engine/enrich.py` — single LLM call per chunk (batched 5 per call) that
+extracts both entities AND testable concepts.
 
 ```
-SYSTEM: Extract key entities from this textbook section. Entities include:
-formulas, laws, constants, named effects, experimental setups, key terms.
-Output JSON only.
+SYSTEM: You are a curriculum analyst for Bangladeshi HSC-level science
+textbooks. Extract key entities and testable concepts from this section.
 
 USER: {chunk_text}
 
@@ -323,118 +343,8 @@ Output:
 {
   "entities": [
     {"name": "Ksp", "type": "formula", "bengali": "দ্রাব্যতা গুণফল"},
-    {"name": "common ion effect", "type": "concept", "bengali": "সাধারণ আয়ন প্রভাব"},
-    {"name": "Le Chatelier's principle", "type": "law", "bengali": "লা শাতেলিয়ের নীতি"}
-  ]
-}
-```
-
-**Cost control:** ~2000 chunks / 5 per call = ~400 LLM calls. Cache results.
-
-**Verify:** Entity extraction on 20 sample chunks. Precision > 0.80.
-
-### T-301: Entity deduplication + normalization
-
-`engine/entity_dedup.py` — deduplicates entities across chunks.
-
-**Logic:**
-1. Normalize: lowercase, strip whitespace, merge Bengali/English variants
-2. Embed entity names
-3. Cluster at cosine > 0.90
-4. Merge clusters into canonical entities
-
-**Verify:** "Ksp", "K_sp", "দ্রাব্যতা গুণফল", "solubility product" are merged.
-
-### T-302: Bridge detection
-
-`engine/bridge_detector.py` — identifies entities spanning multiple chapters.
-
-**Logic:**
-1. For each entity, count distinct chapters it appears in
-2. `bridge_score = (distinct_chapters - 1) / (total_chapters - 1)` (0-1)
-3. High bridge score (≥0.5) = multi-hop synthesis candidate
-
-**Verify:** "solubility product" in Ch2, Ch5, Ch8 → bridge_score ≥ 0.5.
-Single-chapter entity → bridge_score = 0.
-
-### T-303: Knowledge graph builder
-
-`engine/graph_builder.py` — builds entity co-occurrence graph.
-
-**Output:** `data/book_graph.json`
-
-```json
-{
-  "entities": [
-    {
-      "entity_id": "solubility_product",
-      "name_en": "Solubility Product",
-      "name_bn": "দ্রাব্যতা গুণফল",
-      "type": "formula",
-      "chapter_count": 3,
-      "bridge_score": 0.67,
-      "chunk_ids": ["chem_ch2_sec3_p45", "chem_ch5_sec1_p112"]
-    }
+    {"name": "common ion effect", "type": "concept", "bengali": "সাধারণ আয়ন প্রভাব"}
   ],
-  "edges": [
-    {
-      "source": "solubility_product",
-      "target": "common_ion_effect",
-      "weight": 0.85,
-      "co_occurrence_count": 12
-    }
-  ]
-}
-```
-
-**Verify:** Graph has plausible entity count (200-2000). Bridge scores correct.
-
-### T-304: Book weight calculator
-
-`engine/book_weight.py` — computes `book_weight_c` for each concept.
-
-**Formula:**
-
-```
-book_weight_c = α × section_depth_c + β × entity_salience_c + γ × bridge_score_c
-```
-
-- `section_depth_c`: deeper sections → higher weight (niche topics)
-- `entity_salience_c`: entity centrality in the graph
-- `bridge_score_c`: multi-hop potential
-
-**Verify:** Weights in [0,1]. Niche deep-section topics get higher weight.
-
-### T-305: Unit tests for graph
-
-`tests/test_graph.py`:
-- Entity deduplication works
-- Bridge scores are correct
-- Graph is connected (no orphan entities)
-- Book weights sum to plausible range
-
-**Verify:** All tests pass.
-
-**GATE 3:** Knowledge graph built. Bridge detection works. Book weights computed.
-
----
-
-## Phase 4 — Concept Extraction + Indexing (T-400 to T-404)
-
-### T-400: Concept extractor
-
-`engine/taxonomy.py` — extracts testable concepts from each chunk.
-
-**LLM call per chunk (prompt T1 from `08-LLM-PROMPTS.md`):**
-
-```
-SYSTEM: You are a curriculum analyst for Bangladeshi HSC-level science
-textbooks. Extract distinct testable concepts from this section.
-
-USER: {chunk_text}
-
-Output:
-{
   "concepts": [
     {
       "concept_id": "chem_solution_solubility",
@@ -442,100 +352,106 @@ Output:
       "name_bn": "দ্রাব্যতা গুণফল নির্ণয়",
       "keywords_bn": ["দ্রাব্যতা", "গুণফল", "Ksp"],
       "difficulty": 3,
-      "typical_forms": ["numeric_multi_step", "conceptual_recall"]
+      "typical_forms": ["numeric_multi_step", "conceptual_recall"],
+      "bridge_score": 0.0
     }
   ]
 }
 ```
 
-**Verify:** 3-12 concepts per section. Concept IDs unique. Keywords match source.
+**Bridge detection:** For each entity/concept, count distinct chapters it
+appears in. `bridge_score = (distinct_chapters - 1) / max(total_chapters - 1, 1)`.
+Guard: if total_chapters = 1, bridge_score = 0.
 
-### T-401: Concept deduplication
+**Cost control:** ~2000 chunks / 5 per call = ~400 LLM calls (was ~800 in old
+plan with separate entity+concept phases). Cache results.
+
+**Output:** `data/book_enriched.json`
+
+**Verify:** 3-12 concepts per section. Entity precision > 0.80 on 20 samples.
+Concept IDs unique. Bridge scores correct.
+
+### T-301: Concept deduplication
 
 Deduplicate across chunks at cosine > 0.92. Merge into canonical concepts.
 
-**Verify:** Semantically identical concepts are merged.
+**Verify:** Semantically identical concepts are merged. Niche distinctions
+preserved.
 
-### T-402: ChromaDB indexer
+### T-302: ChromaDB indexer
 
-`engine/indexer.py` — embeds and stores concepts + chunks.
+`engine/indexer.py` — embeds and stores enriched chunks.
 
-**Two collections:**
+**Single collection (`chunks`)** — one entry per enriched chunk:
+- Embedding: `intfloat/multilingual-e5-large` on chunk text
+- Metadata: book, chapter, section, page_range, anchor_text, chunk_type,
+  entity_names, concept_ids, difficulty, bridge_score
 
-1. **`concepts`** — one entry per concept
-   - Embedding: `intfloat/multilingual-e5-large` on
-     `name_en + " " + " ".join(keywords_bn)`
-   - Metadata: subject, chapter, section, difficulty, book_weight, bridge_score
+**Verify:** Collection populated. Query returns relevant results.
 
-2. **`chunks`** — one entry per text chunk
-   - Embedding: same model on chunk text
-   - Metadata: book, chapter, section, page_range, anchor_text, chunk_type,
-     entity_names, concept_ids
-
-**Verify:** Both collections populated. Query returns relevant results.
-
-### T-403: Retrieval test
+### T-303: Retrieval test
 
 `scripts/test_retrieval.py` — measures retrieval ceiling.
 
-1. Take 20 labelled questions
+1. Take 20 labelled questions (English, from Phase 1)
 2. Embed each question
-3. Query ChromaDB top-8 concepts
+3. Query ChromaDB top-8 chunks
 4. Check if true concept is in top-8
 
 **Verify:** `retrieval_ceiling >= 0.90`.
 
-### T-404: Unit tests for indexing
+### T-304: Unit tests for indexing
 
 `tests/test_index.py`:
 - Embeddings correct dimension
 - Query returns expected results
 - Metadata filtering works
-- Incremental update works
+- Incremental update works (skip already-indexed chunks)
 
 **Verify:** All tests pass.
 
-**GATE 4:** ChromaDB indexed. `retrieval_ceiling >= 0.90`.
+**GATE 3:** ChromaDB indexed. `retrieval_ceiling >= 0.90`. Incremental updates
+supported.
 
 ---
 
-## Phase 5 — Classification (T-500 to T-502)
+## Phase 4 — Classification (T-400 to T-402)
 
-### T-500: Classifier
+### T-400: Classifier
 
 `engine/classify.py` — classifies exam questions into concepts.
 
 1. Embed question text
-2. Query ChromaDB → top-8 candidate concepts
-3. LLM call (prompt T2) → `{concept_id, subject, difficulty, question_form, confidence}`
+2. Query ChromaDB → top-8 candidate chunks
+3. LLM call → `{concept_id, subject, difficulty, question_form, confidence}`
 4. If confidence < 60 or concept not in candidates → `needs_review: true`
 
 **Verify:** Subject accuracy ≥ 0.97. Concept accuracy ≥ 0.80.
 
-### T-501: Review queue
+### T-401: Review queue
 
 `engine/review_queue.py` — low-confidence questions flagged for review.
 
 **Verify:** `needs_review` rate ≤ 0.15.
 
-### T-502: Disagreement report
+### T-402: Disagreement report
 
 `scripts/disagreement_report.py` — classifier vs filename disagreements.
 
 **Verify:** Report exists. Human reviews first 20.
 
-**GATE 5:** Classification metrics meet thresholds.
+**GATE 4:** Classification metrics meet thresholds.
 
 ---
 
-## Phase 6 — Features + Scoring (T-600 to T-602)
+## Phase 5 — Features + Scoring (T-500 to T-502)
 
-### T-600: Feature builder
+### T-500: Feature builder
 
 `engine/features.py` — per-concept signal matrix.
 
 **Features:**
-- `book_weight_c` (from Phase 3)
+- `book_weight_c` (section depth + entity salience + bridge score from Phase 3)
 - `bank_frequency_c` (from question bank)
 - `daily_frequency_c` (from dailies this week)
 - `recency_c` (weeks since last appearance)
@@ -544,43 +460,43 @@ Deduplicate across chunks at cosine > 0.92. Merge into canonical concepts.
 
 **Verify:** No NaNs. Feature ranges match spec.
 
-### T-601: Scorer
+### T-501: Scorer
 
 `engine/score.py` — Beta-Binomial + log-linear adjustment.
 
 **Verify:** Contributions sum to final logit within 1e-6.
 
-### T-602: Backtest
+### T-502: Backtest
 
 Leave-one-week-out. Writes `config/weights.json`.
 
 **Verify:** `concept_recall@30 >= 0.55`.
 
-**GATE 6:** Scoring metrics meet thresholds.
+**GATE 5:** Scoring metrics meet thresholds.
 
 ---
 
-## Phase 7 — Generation + Verification (T-700 to T-704)
+## Phase 6 — Generation + Verification (T-600 to T-604)
 
-### T-700: House-style extractor
+### T-600: House-style extractor
 
 `engine/style_extractor.py` — stem length, numeric ranges, distractor patterns.
 
 **Verify:** Values computed from data, not hardcoded.
 
-### T-701: Generator
+### T-601: Generator
 
 `engine/generate.py` — LLM generates 30 questions from top concepts + source.
 
 **Verify:** 30 questions produced. Each cites `based_on.book_sections`.
 
-### T-702: Solvability filter
+### T-602: Solvability filter
 
 LLM verifies each question is solvable from source material.
 
 **Verify:** Discard rate < 30%.
 
-### T-703: Grounding verification (NotebookLM-style)
+### T-603: Grounding verification (NotebookLM-style)
 
 `engine/verify.py` — self-check that each predicted concept has source text.
 
@@ -590,31 +506,31 @@ LLM verifies each question is solvable from source material.
 
 **Verify:** All output concepts are grounded.
 
-### T-704: Output rendering
+### T-604: Output rendering
 
 `prediction_wN.json` + `prediction_wN.md` with English questions + probabilities.
 
 **Verify:** Markdown renders correctly.
 
-**GATE 7:** `concept_recall@30 >= 0.70` on holdout. Two real weeklies logged.
+**GATE 6:** `concept_recall@30 >= 0.70` on holdout. Two real weeklies logged.
 
 ---
 
-## Phase 8 — Eval + Loop Closure (T-800 to T-802)
+## Phase 7 — Eval + Loop Closure (T-700 to T-702)
 
-### T-800: Eval harness
+### T-700: Eval harness
 
 `engine/eval.py` — all metrics from `07-EVALUATION-PROTOCOL.md`.
 
 **Verify:** `python -m engine.eval --selftest` emits full scorecard.
 
-### T-801: Outcome logger
+### T-701: Outcome logger
 
 `scripts/log_actual.py` — logs real weekly results.
 
 **Verify:** Run against one existing weekly.
 
-### T-802: Dashboard
+### T-702: Dashboard
 
 `dashboard.py` — stage health, ranked concepts, scorecard history.
 
@@ -622,15 +538,41 @@ LLM verifies each question is solvable from source material.
 
 ---
 
+## Future Enhancement: Entity Knowledge Graph
+
+Once 10+ weekly exams exist to validate against, add entity graph layer:
+
+- Entity co-occurrence graph (`engine/graph_builder.py`)
+- Bridge detection with higher confidence
+- Cross-chapter entity tracking
+- Entity-based book weight calculation
+
+This replaces the simple `bridge_score` in T-300 with a richer signal.
+
+---
+
+## Incremental Design
+
+Each stage must support incremental updates:
+
+1. **Detect already-processed files:** Check `data/` outputs for existing
+   entries before re-processing.
+2. **Skip unchanged chunks:** Chunks are keyed on `(book, page_start, page_end)`.
+   If a chunk exists with the same key and text hash, skip.
+3. **Append, don't replace:** JSONL outputs append new lines. JSON outputs
+   merge by key.
+
+---
+
 ## Risk Register
 
 | # | Risk | Impact | Likelihood | Mitigation |
 |---|------|--------|-----------|------------|
-| R1 | OCR quality on Bengali scans | Bad chunks → bad concepts | High | Test OCR on sample first. Flag low-confidence pages. |
+| R1 | OCR quality on Bengali scans | Bad chunks → bad concepts | High | Test OCR on sample first. Flag low-confidence pages. `ocr_overrides/` for manual fixes. |
 | R2 | C: drive fills up (0.71 GB free) | Model downloads fail | High | Set HF_HOME and EASYOCR_MODEL_PATH to G: in setup_env.ps1. |
-| R3 | Multi-concept questions not retrieved | Low retrieval ceiling | Medium | Bridge detection boosts cross-chapter entities. Smaller chunks. |
-| R4 | Entity extraction hallucinations | Bad graph edges | Medium | Validate against source text. High cosine threshold (0.92). |
-| R5 | LLM cost for 10k pages of OCR | Expensive | Medium | Batch 5 chunks per call. Cache aggressively. Local model. |
+| R3 | Multi-concept questions not retrieved | Low retrieval ceiling | Medium | Bridge score boosts cross-chapter entities. Smaller chunks. |
+| R4 | Entity extraction hallucinations | Bad concepts | Medium | Validate against source text. High cosine threshold (0.92). |
+| R5 | LLM cost for 10k pages of OCR | Expensive | Medium | Batch 5 chunks per call (was 5, now single call saves ~400). Cache aggressively. Local model. |
 | R6 | Embedding model doesn't handle Bengali | Poor retrieval | Medium | Test with 20 pairs first. Fallback: translate before embedding. |
 | R7 | Concept dedup over-merges | Loses niche distinctions | Low | High cosine threshold. Human spot-check. |
 
@@ -641,15 +583,14 @@ LLM verifies each question is solvable from source material.
 | Phase | Tasks | Estimated Effort |
 |-------|-------|-----------------|
 | Phase 0 | T-006 only | 0.5 day |
-| Phase 1 (Exam PDFs) | T-100 to T-104 | 1 day |
+| Phase 1 (Exam PDFs) | T-100 to T-103 | 1 day |
 | Phase 2 (OCR + Chunking) | T-200 to T-207 | 3-4 days |
-| Phase 3 (Entities + Graph) | T-300 to T-305 | 2-3 days |
-| Phase 4 (Concepts + Index) | T-400 to T-404 | 2 days |
-| Phase 5 (Classification) | T-500 to T-502 | 1-2 days |
-| Phase 6 (Features + Scoring) | T-600 to T-602 | 1-2 days |
-| Phase 7 (Generation) | T-700 to T-704 | 2 days |
-| Phase 8 (Eval + Loop) | T-800 to T-802 | 1 day |
-| **Total** | | **~14-17 days** |
+| Phase 3 (Enrich + Index) | T-300 to T-304 | 2-3 days |
+| Phase 4 (Classification) | T-400 to T-402 | 1-2 days |
+| Phase 5 (Features + Scoring) | T-500 to T-502 | 1-2 days |
+| Phase 6 (Generation) | T-600 to T-604 | 2 days |
+| Phase 7 (Eval + Loop) | T-700 to T-702 | 1 day |
+| **Total** | | **~12-15 days** |
 
 ---
 
