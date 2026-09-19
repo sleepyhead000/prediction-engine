@@ -353,16 +353,16 @@ class GroundTruthLabel(BaseModel):
 # ---------------------------------------------------------------------------
 
 class EnglishOption(BaseModel):
-    letter: str = Field(pattern=r"^[A-D]$")
+    letter: str = Field(pattern=r"^[A-E]$")
     text: str
 
 
 class EnglishQuestion(BaseModel):
     q_index: int = Field(ge=1)
     question_text: str
-    options: list[EnglishOption] = Field(min_length=1)
+    options: list[EnglishOption] = Field(default_factory=list)
     math_expressions: list[str] = Field(default_factory=list)
-    correct_letter: Optional[str] = Field(None, pattern=r"^[A-D]$")
+    correct_letter: Optional[str] = Field(None, pattern=r"^[A-E]$")
 
 
 class EnglishDocument(BaseModel):
