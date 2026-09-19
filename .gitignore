@@ -75,6 +75,9 @@ ground_truth/pdfs/
 ground_truth/extracted_questions.json
 ground_truth/test_unicode.txt
 
+# Board book scans (raw images, transfer separately — too large for git)
+sources/books/**/*.pdf
+
 # LocalAPI (separate project, has its own repo)
 LocalAPI/
 
