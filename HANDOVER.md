@@ -38,17 +38,25 @@ $env:EASYOCR_MODEL_PATH = "G:\prediction-engine\cache\easyocr"
 | LLM client | Done | `engine/llm.py` | Cached, retry, sha256 keys |
 | Eval harness | Done | `engine/eval.py` | `python -m engine.eval --selftest` |
 | Exam PDF ingest | Done | `engine/ingest.py` | 18 files, 359 questions, 358 with 4+ options |
-| OCR infra | Done | `engine/ocr.py`, `engine/page_extractor.py` | EasyOCR wrapper + PDF renderer |
-| OCR script | Done | `scripts/ocr_books.py` | Full pipeline, JSONL output |
+| Ingest tests | Done | `tests/test_ingest.py` | 15 tests (split, options, metadata, integration) |
+| OCR infra | Done | `engine/ocr.py` | EasyOCR wrapper, GPU toggle via `set_gpu()` |
+| Page extractor | Done | `engine/page_extractor.py` | PDF → PNG via PyMuPDF |
+| OCR script | Done | `scripts/ocr_books.py` | Full pipeline, `--gpu` flag, JSONL output |
+| Section detector | Done | `engine/section_detector.py` | Chapter/section boundaries from OCR text |
+| Chunk splitter | Done | `engine/chunker.py` | Overlapping chunks (500 tokens, 100 overlap) |
+| Metadata enricher | Done | `engine/metadata_enricher.py` | Keywords, math detection, difficulty |
+
+**40/40 tests pass.**
 
 ## What's NOT Built (next steps)
 
 | Stage | File to create | Depends on |
 |-------|---------------|-----------|
-| Run full OCR | Just run `scripts/ocr_books.py` | GPU recommended (~2h vs ~34h CPU) |
-| Chapter detector | `engine/section_detector.py` | OCR output |
-| Chunk splitter | `engine/chunker.py` | Section detector |
-| Chunk enricher | `engine/enrich.py` | Chunks + LLM |
+| Run full OCR | Just run `scripts/ocr_books.py --gpu` | GPU (~2h) |
+| Run section detection | `python -m engine.section_detector` | OCR output |
+| Run chunking | `python -m engine.chunker` | Section detection |
+| Run enrichment | `python -m engine.metadata_enricher` | Chunks |
+| Chunk enricher (LLM) | `engine/enrich.py` | Enriched chunks + LLM |
 | ChromaDB indexer | `engine/indexer.py` | Enriched chunks |
 | Classifier | `engine/classify.py` | Indexer + exam questions |
 | Features + scoring | `engine/features.py`, `engine/score.py` | Classifier |
@@ -79,27 +87,40 @@ data/                           # Pipeline outputs (git-ignored, regenerate)
 
 ```
 [1] ingest exams     ->  data/01_questions.json       DONE
-[2] OCR books        ->  data/book_pages.jsonl         READY TO RUN
-[3] chunk+anchor     ->  data/book_chunks.json         TODO
-[4] enrich chunks    ->  data/book_enriched.json       TODO (entities + concepts, single LLM call)
+[2] OCR books        ->  data/book_pages.jsonl         READY TO RUN (--gpu flag)
+[3] chunk+anchor     ->  data/book_chunks.json         CODE DONE, needs OCR
+                          section_detector.py           detects chapters/sections
+                          chunker.py                    splits into 500-token chunks
+                          metadata_enricher.py          adds keywords, math, difficulty
+[4] enrich chunks    ->  data/book_enriched.json       TODO (entities + concepts, LLM)
 [5] index            ->  ChromaDB (persistent)         TODO
 [6] classify         ->  data/03_labelled.json         TODO
 [7] score            ->  data/05_ranked.json           TODO
 [8] generate+eval    ->  out/prediction_wN.json        TODO
 ```
 
-## Running Full OCR (first thing to do)
+## Running the Pipeline (on new PC)
 
 ```powershell
-# Install CUDA PyTorch for GPU acceleration
+# 1. Install CUDA PyTorch
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
-# Run OCR (with GPU)
+# 2. Set cache paths
+$env:HF_HOME = "G:\prediction-engine\cache\huggingface"
 $env:EASYOCR_MODEL_PATH = "G:\prediction-engine\cache\easyocr"
-python -m scripts.ocr_books --src sources/books --out data/book_pages.jsonl
-```
 
-Takes ~2h on RTX 5060 Ti GPU, ~34h on CPU.
+# 3. Run OCR (~2h on RTX 5060 Ti)
+python -m scripts.ocr_books --gpu --src sources/books --out data/book_pages.jsonl
+
+# 4. Detect chapters/sections
+python -m engine.section_detector --input data/book_pages.jsonl --output data/book_sections.json
+
+# 5. Split into chunks
+python -m engine.chunker --pages data/book_pages.jsonl --sections data/book_sections.json --output data/book_chunks.json
+
+# 6. Enrich with metadata
+python -m engine.metadata_enricher --input data/book_chunks.json --output data/book_chunks_enriched.json
+```
 
 ## Key Design Decisions
 
@@ -121,11 +142,15 @@ Takes ~2h on RTX 5060 Ti GPU, ~34h on CPU.
 
 ## Files to Read
 
+- `HANDOVER.md` — this file
 - `files/10-REVISED-IMPLEMENTATION-PLAN.md` — full plan with 8 phases
 - `files/07-EVALUATION-PROTOCOL.md` — metrics and scoring protocol
 - `files/08-LLM-PROMPTS.md` — prompt templates
 - `AGENTS.md` — agent reference doc
 - `engine/schemas.py` — all data models
 - `engine/ingest.py` — how PDF extraction works
-- `engine/ocr.py` — how OCR works
-- `scripts/ocr_books.py` — how to run full OCR
+- `engine/ocr.py` — how OCR works (GPU toggle via `set_gpu()`)
+- `engine/section_detector.py` — chapter/section detection
+- `engine/chunker.py` — text chunking logic
+- `engine/metadata_enricher.py` — chunk enrichment
+- `scripts/ocr_books.py` — full OCR pipeline (`--gpu` flag)

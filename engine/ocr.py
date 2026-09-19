@@ -17,15 +17,23 @@ if "EASYOCR_MODEL_PATH" not in os.environ:
 import easyocr  # noqa: E402
 
 _reader: easyocr.Reader | None = None
+_use_gpu: bool = False
+
+
+def set_gpu(use_gpu: bool) -> None:
+    """Set GPU mode. Must be called before first OCR call."""
+    global _use_gpu, _reader
+    _use_gpu = use_gpu
+    _reader = None  # Reset reader to pick up new setting
 
 
 def get_reader() -> easyocr.Reader:
-    """Lazy-init EasyOCR reader (Bengali + English, CPU)."""
+    """Lazy-init EasyOCR reader (Bengali + English)."""
     global _reader
     if _reader is None:
         _reader = easyocr.Reader(
             ["bn", "en"],
-            gpu=False,
+            gpu=_use_gpu,
             verbose=False,
             model_storage_directory=os.environ["EASYOCR_MODEL_PATH"],
         )
