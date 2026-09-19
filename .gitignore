@@ -1,14 +1,84 @@
+# Python
 __pycache__/
-timesfm/
 *.pyc
 *.pyo
-.env
 *.egg-info/
 dist/
 build/
 .venv/
 venv/
-node_modules/
-*.log
+*.egg
+
+# Environment
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# Caches
+.ruff_cache/
+.cache/
+
+# HuggingFace / EasyOCR model caches (redirected to cache/)
+cache/huggingface/
+cache/easyocr/
+
+# Pipeline outputs (regenerated — never commit)
+data/
+cache/llm/
+out/
+
+# Old code files (kept on disk for reference, not in git)
+analyzer.py
+bijoy_decoder.py
+classifier.py
+parser.py
+dashboard.py
+debug2.py
+debug3.py
+debug4.py
+check_unknowns.py
+run.bat
+launch.bat
+parsed_questions.json
+classified_questions.json
+analysis_results.json
+
+# Old source locations (files moved to sources/)
+Chemistry/
+Physics/
+Math/
+Weekly 1/
+WEEK 2 DAILYS/
+Question Bank/
+
+# Temporary scripts
+scripts/_*
+
+# Large generated files
+ground_truth/pdfs/
+ground_truth/extracted_questions.json
+ground_truth/test_unicode.txt
+
+# LocalAPI (separate project, has its own repo)
+LocalAPI/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node (if ever needed)
+node_modules/
+
+# TimesFM (not used)
+timesfm/

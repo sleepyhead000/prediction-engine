@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<title>Labeling: M1 written 1.mhtml</title>
+<script>
+MathJax = {
+  tex: { inlineMath: [['\\(', '\\)']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" async></script>
+<style>
+body { font-family: 'SolaimanLipi', 'Kalpurush', sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #fafafa; }
+.question { background: white; border: 1px solid #ddd; border-radius: 8px; padding: 20px; margin: 20px 0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.question-header { font-weight: bold; color: #333; margin-bottom: 10px; font-size: 1.1em; }
+.qid { font-family: monospace; font-size: 0.85em; color: #888; }
+.options { margin: 10px 0; padding-left: 20px; }
+.option { margin: 5px 0; }
+.option-label { font-weight: bold; color: #555; }
+.label-form { margin-top: 15px; padding: 15px; background: #f5f5f5; border-radius: 6px; }
+.label-form label { display: block; margin: 8px 0 4px; font-weight: bold; font-size: 0.9em; }
+.label-form input, .label-form select { width: 100%; padding: 6px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+.label-form .row { display: flex; gap: 12px; }
+.label-form .row > div { flex: 1; }
+.copy-btn { background: #4CAF50; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85em; margin-top: 10px; }
+.copy-btn:hover { background: #45a049; }
+h1 { color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px; }
+.raw-text { background: #fff3cd; padding: 8px; border-radius: 4px; font-size: 0.9em; margin: 5px 0; font-family: monospace; white-space: pre-wrap; word-break: break-all; }
+</style>
+</head>
+<body>
+<h1>M1 written 1.mhtml</h1>
+<p>Exam kind: daily_written | Subject: Math | Questions: 1</p>
+<div class="question" id="q1">
+  <div class="question-header">Question 1</div>
+  <div class="qid">QID: sha1:M1 written 1.mhtml:q1 <button class="copy-btn" data-qid="sha1:M1 written 1.mhtml:q1">Copy QID</button></div>
+  <div class="raw-text">ABCD  e‡M©i GKwU kxl© A(−1,2)  Ges GKwU K‡Y©i mgxKiY 3x−y+7=0  n‡j, B  I D  we›`yi ¯’vbv¼ wbY©q Ki|</div>
+  <div class="options">
+    
+  </div>
+  <div class="label-form">
+    <div class="row">
+      <div>
+        <label>Subject</label>
+        <select name="subject">
+          <option value="">-- select --</option>
+          <option value="Physics">Physics</option>
+          <option value="Chemistry">Chemistry</option>
+          <option value="Math">Math</option>
+        </select>
+      </div>
+      <div>
+        <label>Difficulty (1-5)</label>
+        <input type="number" name="difficulty" min="1" max="5" value="3">
+      </div>
+    </div>
+    <label>Concept ID (e.g. phy.mech.lever_rider_balance)</label>
+    <input type="text" name="concept_id" placeholder="subject.topic.specific_concept">
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.copy-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    navigator.clipboard.writeText(btn.dataset.qid);
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy QID', 1500);
+  });
+});
+</script>
+</body>
+</html>
