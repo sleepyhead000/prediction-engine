@@ -12,7 +12,7 @@ import json
 import time
 from pathlib import Path
 
-from engine.ocr import ocr_image, set_gpu
+from engine.ocr import ocr_image, set_gpu, detect_device, get_device
 from engine.page_extractor import extract_page_image, get_pdf_page_count
 
 
@@ -47,8 +47,9 @@ def ocr_pdf(
 def run_ocr(src_dir: Path, out_path: Path, dpi: int = 200, gpu: bool = False) -> None:
     """OCR all PDFs under src_dir. Writes JSONL output."""
     set_gpu(gpu)
+    device = get_device()
     pdf_files = sorted(src_dir.rglob("*.pdf"))
-    print(f"Found {len(pdf_files)} book PDFs (GPU={'ON' if gpu else 'OFF'})")
+    print(f"Found {len(pdf_files)} book PDFs (device={device})")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     total_pages = 0
@@ -83,7 +84,7 @@ def main() -> None:
     parser.add_argument("--src", type=Path, default=Path("sources/books"))
     parser.add_argument("--out", type=Path, default=Path("data/book_pages.jsonl"))
     parser.add_argument("--dpi", type=int, default=200)
-    parser.add_argument("--gpu", action="store_true", help="Use GPU (requires CUDA PyTorch)")
+    parser.add_argument("--gpu", action="store_true", help="Use GPU (auto-detects CUDA/XPU)")
     args = parser.parse_args()
 
     run_ocr(args.src, args.out, dpi=args.dpi, gpu=args.gpu)

@@ -62,6 +62,10 @@ Write-Host "  Python: $pythonVersion"
 # Install from pyproject.toml
 pip install -e ".[dev]" 2>&1 | ForEach-Object { Write-Host "  $_" }
 
+# Install PyTorch with Intel XPU support (for Intel Arc GPUs)
+Write-Host "  Installing PyTorch with Intel XPU support..." -ForegroundColor Cyan
+pip install torch torchvision --index-url https://download.pytorch.org/whl/xpu 2>&1 | ForEach-Object { Write-Host "  $_" }
+
 # --- 4. Verify installations ---
 Write-Host "`n[4/5] Verifying installations..." -ForegroundColor Yellow
 
@@ -82,6 +86,10 @@ Write-Host "`n[5/5] Sanity checks..." -ForegroundColor Yellow
 # Test engine import
 $importResult = python -c "import engine; print(f'engine v{engine.__version__}')" 2>&1
 Write-Host "  $importResult"
+
+# Test GPU detection
+$gpuResult = python -c "import torch; xpu=getattr(torch,'xpu',None); print(f'XPU available: {xpu.is_available() if xpu else False}')" 2>&1
+Write-Host "  $gpuResult"
 
 # Test schema round-trip
 $testResult = python -m pytest tests/test_schemas.py -v --tb=short 2>&1 | Select-Object -Last 5

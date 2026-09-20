@@ -39,7 +39,7 @@ $env:EASYOCR_MODEL_PATH = "G:\prediction-engine\cache\easyocr"
 | Eval harness | Done | `engine/eval.py` | `python -m engine.eval --selftest` |
 | Exam PDF ingest | Done | `engine/ingest.py` | 18 files, 359 questions, 358 with 4+ options |
 | Ingest tests | Done | `tests/test_ingest.py` | 15 tests (split, options, metadata, integration) |
-| OCR infra | Done | `engine/ocr.py` | EasyOCR wrapper, GPU toggle via `set_gpu()` |
+| OCR infra | Done | `engine/ocr.py` | EasyOCR wrapper, GPU toggle (CUDA/XPU/CPU auto-detect) |
 | Page extractor | Done | `engine/page_extractor.py` | PDF → PNG via PyMuPDF |
 | OCR script | Done | `scripts/ocr_books.py` | Full pipeline, `--gpu` flag, JSONL output |
 | Section detector | Done | `engine/section_detector.py` | Chapter/section boundaries from OCR text |
@@ -102,24 +102,33 @@ data/                           # Pipeline outputs (git-ignored, regenerate)
 ## Running the Pipeline (on new PC)
 
 ```powershell
-# 1. Install CUDA PyTorch
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+# 1. Create venv on G: drive (C: has only 1GB free)
+python -m venv "G:\prediction-engine\.venv"
+& "G:\prediction-engine\.venv\Scripts\pip.exe" install torch torchvision --index-url https://download.pytorch.org/whl/xpu
+& "G:\prediction-engine\.venv\Scripts\pip.exe" install -e ".[dev]"
+& "G:\prediction-engine\.venv\Scripts\pip.exe" install easyocr
 
-# 2. Set cache paths
+# 2. Patch EasyOCR for XPU (3 files in .venv/Lib/site-packages/easyocr/)
+#    easyocr.py   — add XPU to device detection chain
+#    detection.py — add 'or device == \"xpu\"' to CPU branch
+#    recognition.py — same as detection.py
+#    See engine/ocr.py for details (patches applied at venv creation time)
+
+# 3. Set cache paths
 $env:HF_HOME = "G:\prediction-engine\cache\huggingface"
 $env:EASYOCR_MODEL_PATH = "G:\prediction-engine\cache\easyocr"
 
-# 3. Run OCR (~2h on RTX 5060 Ti)
-python -m scripts.ocr_books --gpu --src sources/books --out data/book_pages.jsonl
+# 4. Run OCR (~4h on Intel Arc A580 XPU, ~34h on CPU)
+& "G:\prediction-engine\.venv\Scripts\python.exe" -m scripts.ocr_books --gpu --src sources/books --out data/book_pages.jsonl
 
-# 4. Detect chapters/sections
-python -m engine.section_detector --input data/book_pages.jsonl --output data/book_sections.json
+# 5. Detect chapters/sections
+& "G:\prediction-engine\.venv\Scripts\python.exe" -m engine.section_detector
 
-# 5. Split into chunks
-python -m engine.chunker --pages data/book_pages.jsonl --sections data/book_sections.json --output data/book_chunks.json
+# 6. Split into chunks
+& "G:\prediction-engine\.venv\Scripts\python.exe" -m engine.chunker
 
-# 6. Enrich with metadata
-python -m engine.metadata_enricher --input data/book_chunks.json --output data/book_chunks_enriched.json
+# 7. Enrich with metadata
+& "G:\prediction-engine\.venv\Scripts\python.exe" -m engine.metadata_enricher
 ```
 
 ## Key Design Decisions

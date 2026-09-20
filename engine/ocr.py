@@ -1,5 +1,6 @@
 """OCR module — wraps EasyOCR for Bengali + English text extraction.
 
+Supports CUDA, Intel XPU (Arc GPUs), and CPU backends.
 Requires EasyOCR models to be on a drive with space (not C:).
 Set EASYOCR_MODEL_PATH env var before importing.
 """
@@ -14,26 +15,57 @@ if "EASYOCR_MODEL_PATH" not in os.environ:
         Path(__file__).resolve().parent.parent / "cache" / "easyocr"
     )
 
+import torch  # noqa: E402
 import easyocr  # noqa: E402
 
+
+# ---------------------------------------------------------------------------
+# GPU detection
+# ---------------------------------------------------------------------------
+
+def detect_device() -> str:
+    """Detect best available torch device: 'cuda' > 'xpu' > 'cpu'."""
+    if torch.cuda.is_available():
+        return "cuda"
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        return "xpu"
+    return "cpu"
+
+
+# ---------------------------------------------------------------------------
+# Reader singleton
+# ---------------------------------------------------------------------------
+
 _reader: easyocr.Reader | None = None
-_use_gpu: bool = False
+_device: str = "cpu"
 
 
 def set_gpu(use_gpu: bool) -> None:
-    """Set GPU mode. Must be called before first OCR call."""
-    global _use_gpu, _reader
-    _use_gpu = use_gpu
+    """Set GPU mode. Must be called before first OCR call.
+
+    If use_gpu=True, auto-detects best device (CUDA > XPU > CPU).
+    """
+    global _device, _reader
+    if use_gpu:
+        _device = detect_device()
+    else:
+        _device = "cpu"
     _reader = None  # Reset reader to pick up new setting
+
+
+def get_device() -> str:
+    """Return current device string."""
+    return _device
 
 
 def get_reader() -> easyocr.Reader:
     """Lazy-init EasyOCR reader (Bengali + English)."""
     global _reader
     if _reader is None:
+        use_gpu = _device != "cpu"
         _reader = easyocr.Reader(
             ["bn", "en"],
-            gpu=_use_gpu,
+            gpu=use_gpu,
             verbose=False,
             model_storage_directory=os.environ["EASYOCR_MODEL_PATH"],
         )
