@@ -7,7 +7,10 @@ Set EASYOCR_MODEL_PATH env var before importing.
 from __future__ import annotations
 
 import os
+import warnings
 from pathlib import Path
+
+warnings.filterwarnings("ignore", message=".*quantize_per_tensor.*")
 
 # Ensure model path is set before importing easyocr
 if "EASYOCR_MODEL_PATH" not in os.environ:

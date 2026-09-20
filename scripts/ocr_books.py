@@ -11,8 +11,11 @@ from __future__ import annotations
 import argparse
 import json
 import time
+import warnings
 from collections import defaultdict
 from pathlib import Path
+
+warnings.filterwarnings("ignore", message=".*quantize_per_tensor.*")
 
 from tqdm import tqdm
 
